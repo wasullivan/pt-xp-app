@@ -2,94 +2,110 @@
 
 import { useState } from "react"
 
-type PatientBlock = {
+type Patient = {
   id: string
   name: string
-  startSlot: number
+  slot: number
 }
 
-type ScheduleProps = {
-  shiftStart: string
-  shiftEnd: string
-}
+export default function Schedule() {
+  const [shiftStart, setShiftStart] = useState("08:00")
+  const [shiftEnd, setShiftEnd] = useState("17:00")
+  const [patients, setPatients] = useState<Patient[]>([])
 
-export default function Schedule({ shiftStart, shiftEnd }: ScheduleProps) {
-  const [patients, setPatients] = useState<PatientBlock[]>([])
-  const [draggingId, setDraggingId] = useState<string | null>(null)
+  // Convert HH:MM to minutes
+  const timeToMinutes = (time: string) => {
+    const [h, m] = time.split(":").map(Number)
+    return h * 60 + m
+  }
 
-  const shiftStartMin =
-    parseInt(shiftStart.split(":")[0]) * 60 +
-    parseInt(shiftStart.split(":")[1])
-  const shiftEndMin =
-    parseInt(shiftEnd.split(":")[0]) * 60 +
-    parseInt(shiftEnd.split(":")[1])
-  const totalSlots = Math.ceil((shiftEndMin - shiftStartMin) / 30)
+  const startMin = timeToMinutes(shiftStart)
+  const endMin = timeToMinutes(shiftEnd)
 
-  const addPatientAtSlot = (slot: number) => {
+  // Calculate number of 30-minute slots (including last 30 min)
+  const slots = Math.ceil((endMin - startMin) / 30)
+
+  const addPatient = (slot: number) => {
     setPatients([
       ...patients,
-      { id: crypto.randomUUID(), name: `Patient ${patients.length + 1}`, startSlot: slot },
+      { id: crypto.randomUUID(), name: `Patient ${patients.length + 1}`, slot },
     ])
   }
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!draggingId) return
-    const container = e.currentTarget.getBoundingClientRect()
-    const y = e.clientY - container.top
-    let slot = Math.floor(y / 48) // each 30-min row = 48px height
-    if (slot < 0) slot = 0
-    if (slot >= totalSlots) slot = totalSlots - 1
-    setPatients((prev) =>
-      prev.map((p) => (p.id === draggingId ? { ...p, startSlot: slot } : p))
-    )
+  const formatTime = (totalMin: number) => {
+    let h = Math.floor(totalMin / 60)
+    const m = totalMin % 60
+    const ampm = h >= 12 ? "PM" : "AM"
+    h = h % 12
+    if (h === 0) h = 12
+    return `${h}:${m.toString().padStart(2, "0")} ${ampm}`
   }
 
   return (
-    <div className="flex flex-col">
-      <div className="flex">
-        {/* Left column: hours */}
-        <div className="w-16 flex flex-col border-r">
-          {Array.from({ length: totalSlots }).map((_, i) => {
-            const hour = Math.floor((shiftStartMin + i * 30) / 60)
-            const minute = (shiftStartMin + i * 30) % 60
+    <div className="p-4">
+      {/* Settings */}
+      <div className="flex space-x-4 mb-6">
+        <label>
+          Shift Start:
+          <input
+            type="time"
+            value={shiftStart}
+            onChange={(e) => setShiftStart(e.target.value)}
+            className="ml-2 border px-2 py-1 rounded"
+          />
+        </label>
+        <label>
+          Shift End:
+          <input
+            type="time"
+            value={shiftEnd}
+            onChange={(e) => setShiftEnd(e.target.value)}
+            className="ml-2 border px-2 py-1 rounded"
+          />
+        </label>
+      </div>
+
+      {/* Schedule Grid */}
+      <div className="flex border rounded overflow-hidden">
+        {/* Time labels */}
+        <div className="w-24 flex flex-col border-r">
+          {Array.from({ length: slots }).map((_, i) => {
+            const totalMin = startMin + i * 30
             return (
-              <div key={i} className="h-12 border-b flex items-center justify-end pr-1 text-xs">
-                {`${hour}:${minute.toString().padStart(2, "0")}`}
+              <div
+                key={i}
+                className="h-[50px] flex items-center justify-end pr-2 border-b bg-gray-100 text-sm"
+              >
+                {formatTime(totalMin)}
               </div>
             )
           })}
         </div>
 
-        {/* Right column: schedule */}
-        <div
-          className="flex-1 relative border"
-          onMouseMove={handleMouseMove}
-          onMouseUp={() => setDraggingId(null)}
-        >
-          {Array.from({ length: totalSlots }).map((_, slotIndex) => (
+        {/* Slots */}
+        <div className="flex-1 flex flex-col">
+          {Array.from({ length: slots }).map((_, i) => (
             <div
-              key={slotIndex}
-              className="h-12 border-b relative"
-              onClick={() => addPatientAtSlot(slotIndex)}
+              key={i}
+              className="h-[50px] border-b relative flex items-center px-2"
             >
+              {/* + Add Patient button inside the row */}
+              <button
+                className="text-xs px-2 py-1 bg-blue-500 text-white rounded mr-2"
+                onClick={() => addPatient(i)}
+              >
+                + Add
+              </button>
+
+              {/* Patient blocks in same row */}
               {patients
-                .filter((p) => p.startSlot === slotIndex)
+                .filter((p) => p.slot === i)
                 .map((p) => (
                   <div
                     key={p.id}
-                    className="absolute left-2 right-2 bg-green-500 text-white rounded p-1 cursor-move flex justify-between items-center"
-                    onMouseDown={() => setDraggingId(p.id)}
+                    className="ml-4 bg-green-500 text-white px-2 py-1 rounded inline-block"
                   >
-                    <span>{p.name}</span>
-                    <button
-                      className="ml-2 text-xs"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPatients(patients.filter((x) => x.id !== p.id))
-                      }}
-                    >
-                      ✕
-                    </button>
+                    {p.name}
                   </div>
                 ))}
             </div>
