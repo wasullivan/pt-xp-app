@@ -1,3 +1,9 @@
 export default function Home() {
-  throw new Error("If you see this error, deployment is correct.");
+  return (
+    <main style={{ padding: "2rem", fontFamily: "sans-serif" }}>
+      <h1>PT XP Tracker</h1>
+      <p>Your app is live on Vercel!</p>
+    </main>
+  );
 }
+
