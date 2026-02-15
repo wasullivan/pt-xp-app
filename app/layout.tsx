@@ -1,9 +1,9 @@
-export default function Home() {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>PT XP Tracker</h1>
-      <p>Your app is live on Vercel!</p>
-    </main>
+    <html lang="en">
+      <body className="...">
+        {children}
+      </body>
+    </html>
   );
 }
-
