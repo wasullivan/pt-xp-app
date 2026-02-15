@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState } from "react"
 
 type Patient = {
   id: string
@@ -11,9 +11,10 @@ type Patient = {
 export default function Schedule() {
   const [shiftStart, setShiftStart] = useState("08:00")
   const [shiftEnd, setShiftEnd] = useState("17:00")
+  const [lunchStart, setLunchStart] = useState("12:00")
+  const [lunchEnd, setLunchEnd] = useState("12:30")
   const [patients, setPatients] = useState<Patient[]>([])
 
-  // Convert HH:MM to minutes
   const timeToMinutes = (time: string) => {
     const [h, m] = time.split(":").map(Number)
     return h * 60 + m
@@ -21,8 +22,9 @@ export default function Schedule() {
 
   const startMin = timeToMinutes(shiftStart)
   const endMin = timeToMinutes(shiftEnd)
+  const lunchStartMin = timeToMinutes(lunchStart)
+  const lunchEndMin = timeToMinutes(lunchEnd)
 
-  // Calculate number of 30-minute slots (including last 30 min)
   const slots = Math.ceil((endMin - startMin) / 30)
 
   const addPatient = (slot: number) => {
@@ -43,7 +45,7 @@ export default function Schedule() {
 
   return (
     <div className="p-4">
-      {/* Settings */}
+      {/* Shift settings */}
       <div className="flex space-x-4 mb-6">
         <label>
           Shift Start:
@@ -63,54 +65,71 @@ export default function Schedule() {
             className="ml-2 border px-2 py-1 rounded"
           />
         </label>
+        <label>
+          Lunch Start:
+          <input
+            type="time"
+            value={lunchStart}
+            onChange={(e) => setLunchStart(e.target.value)}
+            className="ml-2 border px-2 py-1 rounded"
+          />
+        </label>
+        <label>
+          Lunch End:
+          <input
+            type="time"
+            value={lunchEnd}
+            onChange={(e) => setLunchEnd(e.target.value)}
+            className="ml-2 border px-2 py-1 rounded"
+          />
+        </label>
       </div>
 
       {/* Schedule Grid */}
-      <div className="flex border rounded overflow-hidden">
-        {/* Time labels */}
-        <div className="w-24 flex flex-col border-r">
-          {Array.from({ length: slots }).map((_, i) => {
-            const totalMin = startMin + i * 30
-            return (
-              <div
-                key={i}
-                className="h-[50px] flex items-center justify-end pr-2 border-b bg-gray-100 text-sm"
-              >
-                {formatTime(totalMin)}
+      <div className="grid grid-cols-[100px_1fr] border rounded">
+        {Array.from({ length: slots }).map((_, i) => {
+          const slotStart = startMin + i * 30
+          const slotEnd = slotStart + 30
+          const isLunch = slotStart >= lunchStartMin && slotStart < lunchEndMin
+
+          return (
+            <React.Fragment key={i}>
+              {/* Time Label */}
+              <div className="h-[50px] flex items-center justify-end pr-2 border-b bg-gray-100 text-sm">
+                {formatTime(slotStart)}
               </div>
-            )
-          })}
-        </div>
 
-        {/* Slots */}
-        <div className="flex-1 flex flex-col">
-          {Array.from({ length: slots }).map((_, i) => (
-            <div
-              key={i}
-              className="h-[50px] border-b relative flex items-center px-2"
-            >
-              {/* + Add Patient button inside the row */}
-              <button
-                className="text-xs px-2 py-1 bg-blue-500 text-white rounded mr-2"
-                onClick={() => addPatient(i)}
+              {/* Slot Row */}
+              <div
+                className={`h-[50px] border-b flex items-center px-2 gap-2 relative ${
+                  isLunch ? "bg-yellow-200" : ""
+                }`}
               >
-                + Add
-              </button>
-
-              {/* Patient blocks in same row */}
-              {patients
-                .filter((p) => p.slot === i)
-                .map((p) => (
-                  <div
-                    key={p.id}
-                    className="ml-4 bg-green-500 text-white px-2 py-1 rounded inline-block"
+                {!isLunch && (
+                  <button
+                    className="text-xs px-2 py-1 bg-blue-500 text-white rounded"
+                    onClick={() => addPatient(i)}
                   >
-                    {p.name}
-                  </div>
-                ))}
-            </div>
-          ))}
-        </div>
+                    + Add
+                  </button>
+                )}
+
+                {patients
+                  .filter((p) => p.slot === i)
+                  .map((p) => (
+                    <div
+                      key={p.id}
+                      className="ml-2 bg-green-500 text-white px-2 py-1 rounded inline-block"
+                    >
+                      {p.name}
+                    </div>
+                  ))}
+
+                {isLunch && <span className="ml-2 text-gray-700">Lunch</span>}
+              </div>
+            </React.Fragment>
+          )
+        })}
       </div>
     </div>
   )
