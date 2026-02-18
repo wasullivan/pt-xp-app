@@ -1,241 +1,353 @@
-"use client"
+"use client";
 
-import React, { useState } from "react"
+import React, { useState, useMemo, useEffect } from "react";
 
-type BillingUnits = {
-  theract: number
-  neuro: number
-  therex: number
-  manual: number
-  gait: number
-  modalities: number
-}
+type Billing = {
+  theract: number;
+  neuro: number;
+  therex: number;
+  modalities: number;
+  evaluation: number;
+  selfManagement: number;
+};
 
 type Patient = {
-  id: string
-  name: string
-  time: string // e.g., "8:00 AM"
-  billing: BillingUnits
-}
+  id: string;
+  name: string;
+  start: number; // minutes from midnight
+  billing?: Billing;
+};
 
-const generateTimeSlots = (start = 8, end = 17) => {
-  const slots: string[] = []
-  let hour = start
-  let minute = 0
-  while (hour < end || (hour === end && minute === 0)) {
-    const displayHour = hour > 12 ? hour - 12 : hour
-    const period = hour >= 12 ? "PM" : "AM"
-    slots.push(`${displayHour}:${minute.toString().padStart(2, "0")} ${period}`)
-    minute += 30
-    if (minute === 60) {
-      minute = 0
-      hour++
-    }
-  }
-  return slots
-}
+const SLOT_HEIGHT = 45;
+const PATIENT_HEIGHT = SLOT_HEIGHT * 2; // 1 hour
+const DAY_START = 8 * 60;
+const DAY_END = 17 * 60;
 
-// Convert HH:MM AM/PM to minutes since midnight
-const timeToMinutes = (time: string) => {
-  const [hm, period] = time.split(" ")
-  let [h, m] = hm.split(":").map(Number)
-  if (period === "PM" && h < 12) h += 12
-  if (period === "AM" && h === 12) h = 0
-  return h * 60 + m
-}
+const defaultBilling: Billing = {
+  theract: 0,
+  neuro: 0,
+  therex: 0,
+  modalities: 0,
+  evaluation: 0,
+  selfManagement: 0,
+};
 
-// Convert minutes since midnight to HH:MM AM/PM
-const minutesToTime = (minutes: number) => {
-  let h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  const period = h >= 12 ? "PM" : "AM"
-  if (h > 12) h -= 12
-  if (h === 0) h = 12
-  return `${h}:${m.toString().padStart(2, "0")} ${period}`
-}
+const generateSlots = () => {
+  const arr: number[] = [];
+  for (let m = DAY_START; m <= DAY_END; m += 30) arr.push(m);
+  return arr;
+};
+
+const formatTime = (m: number) => {
+  let h = Math.floor(m / 60);
+  const min = m % 60;
+  const period = h >= 12 ? "PM" : "AM";
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${min.toString().padStart(2, "0")} ${period}`;
+};
+
+const levelLabel = (lvl: number) => {
+  if (lvl === 1) return "Novice";
+  if (lvl === 2) return "Apprentice";
+  if (lvl === 3) return "Practitioner";
+  if (lvl === 4) return "Expert";
+  return "Master";
+};
 
 export default function Schedule() {
-  const slots = generateTimeSlots()
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [expandedPatients, setExpandedPatients] = useState<Record<string, boolean>>({})
-  const [newPatientTime, setNewPatientTime] = useState(slots[0] || "")
+  const slots = generateSlots();
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [animatedXP, setAnimatedXP] = useState(0);
 
-  const calculateXP = (billing: BillingUnits) =>
-    billing.theract * 3 +
-    billing.neuro * 2.5 +
-    billing.therex * 1.5 +
-    billing.manual * 1 +
-    billing.gait * 1 +
-    billing.modalities * 0.5
+  const safePatients = useMemo(
+    () =>
+      patients.map((p) => ({
+        ...p,
+        billing: p.billing ?? { ...defaultBilling },
+      })),
+    [patients]
+  );
 
   const addPatient = () => {
-    if (!newPatientTime) return
-    const newPatient: Patient = {
-      id: crypto.randomUUID(),
-      name: "",
-      time: newPatientTime,
-      billing: { theract: 0, neuro: 0, therex: 0, manual: 0, gait: 0, modalities: 0 },
-    }
-    setPatients(prev => [...prev, newPatient])
-    setExpandedPatients(prev => ({ ...prev, [newPatient.id]: true }))
-  }
+    setPatients((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        name: "",
+        start: DAY_START,
+        billing: { ...defaultBilling },
+      },
+    ]);
+  };
 
-  const movePatientToMinutes = (id: string, topMinutes: number) => {
-    const nearestHalfHour = Math.round(topMinutes / 30) * 30
-    const newTime = minutesToTime(nearestHalfHour)
-    setPatients(prev => prev.map(p => (p.id === id ? { ...p, time: newTime } : p)))
-  }
+  const deletePatient = (id: string) => {
+    setPatients((prev) => prev.filter((p) => p.id !== id));
+  };
 
-  const updateBilling = (id: string, field: keyof BillingUnits, delta: number) => {
-    setPatients(prev =>
-      prev.map(p =>
-        p.id === id ? { ...p, billing: { ...p.billing, [field]: Math.max(0, p.billing[field] + delta) } } : p
+  const movePatient = (id: string, minutes: number) => {
+    setPatients((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, start: minutes } : p))
+    );
+  };
+
+  const updateUnit = (id: string, field: keyof Billing, delta: number) => {
+    setPatients((prev) =>
+      prev.map((p) =>
+        p.id === id && p.billing
+          ? {
+              ...p,
+              billing: {
+                ...p.billing,
+                [field]: Math.max(0, p.billing[field] + delta),
+              },
+            }
+          : p
       )
-    )
-  }
+    );
+  };
 
-  const scheduleStart = timeToMinutes(slots[0])
+  const calculateXP = (b: Billing) =>
+    b.theract * 3 +
+    b.neuro * 2.5 +
+    b.therex * 1.5 +
+    b.modalities * 0.5 +
+    b.evaluation * 4 +
+    b.selfManagement * 2;
+
+  // Prevent overlap: assign lanes horizontally
+  const layout = useMemo(() => {
+    const lanes: Record<number, Patient[]> = {};
+    safePatients.forEach((p) => {
+      if (!lanes[p.start]) lanes[p.start] = [];
+      lanes[p.start].push(p);
+    });
+
+    const map: Record<string, { lane: number; total: number }> = {};
+    Object.values(lanes).forEach((group) => {
+      group.forEach((p, idx) => {
+        map[p.id] = { lane: idx, total: group.length };
+      });
+    });
+    return map;
+  }, [safePatients]);
+
+  const totalXP = safePatients.reduce(
+    (sum, p) => sum + calculateXP(p.billing!),
+    0
+  );
+  const xpForNextLevel = 50;
+  const level = Math.floor(totalXP / xpForNextLevel) + 1;
+
+  useEffect(() => {
+    const animation = requestAnimationFrame(() => {
+      setAnimatedXP((prev) => {
+        if (prev < totalXP) return Math.min(prev + 2, totalXP);
+        if (prev > totalXP) return Math.max(prev - 2, totalXP);
+        return prev;
+      });
+    });
+    return () => cancelAnimationFrame(animation);
+  }, [totalXP, animatedXP]);
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Daily Schedule</h1>
-
-      {/* Add Patient Panel */}
-      <div className="mb-6 flex gap-2 items-center">
-        <label>Start time:</label>
-        <select
-          value={newPatientTime}
-          onChange={e => setNewPatientTime(e.target.value)}
-          className="border px-2 py-1 rounded"
-        >
-          {slots.map(s => (
-            <option key={s} value={s}>
-              {s}
-            </option>
+    <div className="w-full flex flex-col items-center p-6 gap-4">
+      {/* XP + Level + Badges */}
+      <div className="w-full p-4 bg-gray-100 rounded-lg border border-gray-400 mb-6 flex flex-col gap-3">
+        <div className="flex justify-between items-center mb-2">
+          <span className="font-bold text-lg">{totalXP.toFixed(0)} XP</span>
+          <span className="font-bold text-lg">{levelLabel(level)}</span>
+        </div>
+        <div className="relative w-full h-6 bg-gray-300 rounded overflow-hidden border border-gray-400">
+          <div
+            className="absolute left-0 top-0 h-full bg-green-500 transition-all duration-500"
+            style={{
+              width: `${Math.min((animatedXP / xpForNextLevel) * 100, 100)}%`,
+            }}
+          />
+        </div>
+        <div className="flex gap-2 mt-2">
+          {[...Array(3)].map((_, i) => (
+            <div
+              key={i}
+              className="w-8 h-8 bg-yellow-400 rounded-full border border-gray-600"
+            />
           ))}
-        </select>
-        <button onClick={addPatient} className="px-3 py-1 bg-blue-500 text-white rounded">
-          Add Patient
-        </button>
+        </div>
       </div>
 
-      <div className="flex">
-        {/* Left: Time Labels */}
-        <div className="flex flex-col w-24">
-          {slots.map((slot, i) => (
-            <div key={i} className="h-12 border-b flex items-center justify-end pr-2 text-sm font-semibold">
-              {slot}
+      {/* Add Patient Button */}
+      <button
+        onClick={addPatient}
+        className="mb-4 px-4 py-2 bg-blue-600 text-white rounded"
+      >
+        Add Patient
+      </button>
+
+      {/* Schedule Grid */}
+      <div
+        style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}
+        className="w-full border border-gray-300 rounded-lg relative"
+      >
+        {/* TIME COLUMN */}
+        <div className="border-r border-gray-300">
+          {slots.map((m) => (
+            <div
+              key={m}
+              style={{ height: SLOT_HEIGHT }}
+              className="border-b pr-3 pt-3 text-right font-semibold bg-gray-50"
+            >
+              {formatTime(m)}
             </div>
           ))}
         </div>
 
-        {/* Right: Schedule Area */}
+        {/* SCHEDULE COLUMN */}
         <div
-          className="relative flex-1 border bg-gray-50"
-          style={{ height: `${slots.length * 50}px` }}
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => {
-            const id = e.dataTransfer.getData("text/plain")
-            const rect = e.currentTarget.getBoundingClientRect()
-            const top = e.clientY - rect.top
-            const minutesFromStart = scheduleStart + (top / 50) * 30
-            movePatientToMinutes(id, minutesFromStart)
+          style={{
+            position: "relative",
+            height: slots.length * SLOT_HEIGHT,
+          }}
+          className="bg-white"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            const id = e.dataTransfer.getData("text");
+            const rect = e.currentTarget.getBoundingClientRect();
+            const offsetY = e.clientY - rect.top;
+            const slotIndex = Math.floor(offsetY / SLOT_HEIGHT);
+            const snappedMinutes = DAY_START + slotIndex * 30;
+            movePatient(id, snappedMinutes);
           }}
         >
-          {patients.map(p => {
-            const topOffset = ((timeToMinutes(p.time) - scheduleStart) / 30) * 50
-            const isExpanded = expandedPatients[p.id] || false
-            const xp = calculateXP(p.billing)
+          {/* Grid lines */}
+          {slots.map((m) => (
+            <div key={m} style={{ height: SLOT_HEIGHT }} className="border-b" />
+          ))}
+
+          {/* PATIENTS */}
+          {safePatients.map((p) => {
+            const lane = layout[p.id]?.lane ?? 0;
+            const totalLanes = layout[p.id]?.total ?? 1;
+            const top = ((p.start - DAY_START) / 30) * SLOT_HEIGHT;
+            const leftPercent = (lane / totalLanes) * 100;
+            const widthPercent = 100 / totalLanes;
+
+            const isExpanded = expanded === p.id;
 
             return (
               <div
                 key={p.id}
                 draggable
-                onDragStart={e => e.dataTransfer.setData("text/plain", p.id)}
-                style={{ top: `${topOffset}px`, height: "100px" }} // 1-hour block
-                className={`absolute left-2 right-2 cursor-pointer rounded shadow transition-all
-                  ${isExpanded ? "bg-white z-10" : "bg-blue-400 text-white flex items-center justify-center font-bold"}`}
-                onClick={() => setExpandedPatients(prev => ({ ...prev, [p.id]: !prev[p.id] }))}
+                onDragStart={(e) => e.dataTransfer.setData("text", p.id)}
+                onClick={() => setExpanded(isExpanded ? null : p.id)}
+                style={{
+                  position: "absolute",
+                  top,
+                  left: `${leftPercent}%`,
+                  width: `${widthPercent}%`,
+                  height: PATIENT_HEIGHT,
+                  padding: 4,
+                  zIndex: isExpanded ? 50 : 1,
+                  cursor: "grab",
+                }}
               >
-                {!isExpanded ? (
-                  <span>{p.name || "New Patient"}</span>
-                ) : (
-                  <div className="p-2 space-y-2">
-                    <input
-                      type="text"
-                      value={p.name}
-                      onChange={e =>
-                        setPatients(prev =>
-                          prev.map(pt => (pt.id === p.id ? { ...pt, name: e.target.value } : pt))
-                        )
-                      }
-                      placeholder="Patient Name"
-                      className="w-full border px-2 py-1 rounded"
-                      autoFocus
-                    />
-                    {(
-                      [
-                        ["theract", "TherAct"],
-                        ["neuro", "Neuro"],
-                        ["therex", "TherEx"],
-                        ["manual", "Manual"],
-                        ["gait", "Gait"],
-                        ["modalities", "Modalities"],
-                      ] as [keyof BillingUnits, string][]
-                    ).map(([field, label]) => (
-                      <div key={field} className="flex justify-between items-center">
-                        <span>{label}</span>
-                        <div className="flex gap-2 items-center">
-                          <button
-                            onClick={e => {
-                              e.stopPropagation()
-                              updateBilling(p.id, field, -1)
-                            }}
-                            className="px-2 bg-gray-200 rounded"
-                          >
-                            -
-                          </button>
-                          <span>{p.billing[field]}</span>
-                          <button
-                            onClick={e => {
-                              e.stopPropagation()
-                              updateBilling(p.id, field, 1)
-                            }}
-                            className="px-2 bg-gray-200 rounded"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="font-semibold">XP: {xp}</div>
-                    <div className="flex justify-between">
-                      <button
-                        onClick={e => {
-                          e.stopPropagation()
-                          setPatients(prev => prev.filter(pt => pt.id !== p.id))
-                        }}
-                        className="text-xs text-red-600 underline"
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={e => {
-                          e.stopPropagation()
-                          setExpandedPatients(prev => ({ ...prev, [p.id]: false }))
-                        }}
-                        className="px-2 py-1 bg-blue-500 text-white rounded"
-                      >
-                        Save & Close
-                      </button>
+                <div
+                  style={{
+                    height: "100%",
+                    background: isExpanded ? "white" : "#2563eb",
+                    color: isExpanded ? "black" : "white",
+                    borderRadius: 12,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    padding: 8,
+                    overflowY: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  {!isExpanded ? (
+                    <div className="font-bold text-center flex-1 flex items-center justify-center">
+                      {p.name || "New Patient"}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="space-y-2 flex-1">
+                      <input
+                        value={p.name}
+                        onChange={(e) =>
+                          setPatients((prev) =>
+                            prev.map((pt) =>
+                              pt.id === p.id
+                                ? { ...pt, name: e.target.value }
+                                : pt
+                            )
+                          )
+                        }
+                        className="w-full border p-2 rounded"
+                        placeholder="Patient Name"
+                        autoFocus
+                      />
+                      {(Object.keys(p.billing ?? {}) as (keyof Billing)[]).map(
+                        (key) => (
+                          <div
+                            key={key}
+                            className="flex justify-between items-center text-sm"
+                          >
+                            <span>{key}</span>
+                            <div className="flex gap-2 items-center">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateUnit(p.id, key, -1);
+                                }}
+                                className="px-2 bg-gray-200 rounded"
+                              >
+                                -
+                              </button>
+                              {p.billing![key]}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateUnit(p.id, key, 1);
+                                }}
+                                className="px-2 bg-gray-200 rounded"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      )}
+                      <div className="font-semibold">
+                        XP: {calculateXP(p.billing!)}
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpanded(null);
+                          }}
+                          className="flex-1 bg-blue-600 text-white py-2 rounded"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deletePatient(p.id);
+                          }}
+                          className="flex-1 bg-red-600 text-white py-2 rounded"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            )
+            );
           })}
         </div>
       </div>
     </div>
-  )
+  );
 }
