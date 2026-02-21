@@ -1,21 +1,38 @@
 "use client"
 
 import React, { useState, useMemo, useEffect } from "react"
-import { useTherapist, Patient } from "../context/TherapistContext"
 
-const DAY_START = 8 * 60
-const DAY_END = 18 * 60
+type Units = {
+  eval: number
+  therAct: number
+  neuro: number
+  therEx: number
+  manual: number
+  self: number
+  modality: number
+}
+
+export type Patient = {
+  id: string
+  name: string
+  start: number
+  duration: number
+  units: Units
+}
+
+const DAY_START = 8 * 60 // 8:00am
+const DAY_END = 18 * 60 // 6:00pm
 const SLOT = 30
 const PIXELS_PER_MINUTE = 1.2
 
 const UNIT_VALUES = {
-  "eval": 30,
-  "therAct": 18,
-  "neuro": 16,
-  "therEx": 14,
-  "manual": 12,
-  "self": 9,
-  "modality": 6,
+  eval: 30,
+  therAct: 18,
+  neuro: 16,
+  therEx: 14,
+  manual: 12,
+  self: 9,
+  modality: 6,
 }
 
 // Diminishing return XP function
@@ -30,56 +47,44 @@ function calculateUnitXP(count: number, base: number) {
   return xp
 }
 
-function calculateLanes(patients: Patient[]) {
-  const sorted = [...patients].sort((a, b) => a.start - b.start)
-  const lanes: Patient[][] = []
-
-  sorted.forEach(p => {
-    let placed = false
-    for (let lane of lanes) {
-      const conflict = lane.some(
-        other =>
-          p.start < other.start + other.duration &&
-          other.start < p.start + p.duration
-      )
-      if (!conflict) {
-        lane.push(p)
-        placed = true
-        break
-      }
-    }
-    if (!placed) lanes.push([p])
-  })
-
-  return lanes
-}
-
 export default function Schedule() {
-  const { patients, setPatients } = useTherapist()
+  const [patients, setPatients] = useState<Patient[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
 
   const totalMinutes = DAY_END - DAY_START
   const dayHeight = totalMinutes * PIXELS_PER_MINUTE
 
-  const totalXP = useMemo(() => {
-    return patients.reduce((sum, p) => {
-      return (
-        sum +
-        calculateUnitXP(p.units["eval"], UNIT_VALUES["eval"]) +
-        calculateUnitXP(p.units["therAct"], UNIT_VALUES["therAct"]) +
-        calculateUnitXP(p.units["neuro"], UNIT_VALUES["neuro"]) +
-        calculateUnitXP(p.units["therEx"], UNIT_VALUES["therEx"]) +
-        calculateUnitXP(p.units["manual"], UNIT_VALUES["manual"]) +
-        calculateUnitXP(p.units["self"], UNIT_VALUES["self"]) +
-        calculateUnitXP(p.units["modality"], UNIT_VALUES["modality"])
-      )
-    }, 0)
+  // XP Calculation
+  const xpBreakdown = useMemo(() => {
+    const totals = {
+      eval: 0,
+      therAct: 0,
+      neuro: 0,
+      therEx: 0,
+      manual: 0,
+      self: 0,
+      modality: 0,
+    }
+
+    patients.forEach(p => {
+      totals.eval += calculateUnitXP(p.units.eval, UNIT_VALUES.eval)
+      totals.therAct += calculateUnitXP(p.units.therAct, UNIT_VALUES.therAct)
+      totals.neuro += calculateUnitXP(p.units.neuro, UNIT_VALUES.neuro)
+      totals.therEx += calculateUnitXP(p.units.therEx, UNIT_VALUES.therEx)
+      totals.manual += calculateUnitXP(p.units.manual, UNIT_VALUES.manual)
+      totals.self += calculateUnitXP(p.units.self, UNIT_VALUES.self)
+      totals.modality += calculateUnitXP(p.units.modality, UNIT_VALUES.modality)
+    })
+
+    return totals
   }, [patients])
 
+  const totalXP = Object.values(xpBreakdown).reduce((a, b) => a + b, 0)
   const level = Math.floor(totalXP / 100) + 1
   const xpIntoLevel = totalXP % 100
 
+  // Add / Delete
   function addPatient() {
     setPatients(prev => [
       ...prev,
@@ -89,13 +94,13 @@ export default function Schedule() {
         start: 0,
         duration: 60,
         units: {
-          "eval": 0,
-          "therAct": 0,
-          "neuro": 0,
-          "therEx": 0,
-          "manual": 0,
-          "self": 0,
-          "modality": 0,
+          eval: 0,
+          therAct: 0,
+          neuro: 0,
+          therEx: 0,
+          manual: 0,
+          self: 0,
+          modality: 0,
         },
       },
     ])
@@ -105,6 +110,7 @@ export default function Schedule() {
     setPatients(prev => prev.filter(p => p.id !== id))
   }
 
+  // Drag & Drop
   useEffect(() => {
     function handleMouseMove(e: MouseEvent) {
       if (!dragging) return
@@ -118,16 +124,43 @@ export default function Schedule() {
         prev.map(p => (p.id === dragging ? { ...p, start: minutes } : p))
       )
     }
+
     function stopDrag() {
       setDragging(null)
     }
+
     window.addEventListener("mousemove", handleMouseMove)
     window.addEventListener("mouseup", stopDrag)
     return () => {
       window.removeEventListener("mousemove", handleMouseMove)
       window.removeEventListener("mouseup", stopDrag)
     }
-  }, [dragging, dayHeight, setPatients])
+  }, [dragging, dayHeight])
+
+  // Calculate lanes to prevent overlap
+  function calculateLanes() {
+    const sorted = [...patients].sort((a, b) => a.start - b.start)
+    const lanes: Patient[][] = []
+    sorted.forEach(p => {
+      let placed = false
+      for (let lane of lanes) {
+        const conflict = lane.some(
+          other =>
+            p.start < other.start + other.duration &&
+            other.start < p.start + p.duration
+        )
+        if (!conflict) {
+          lane.push(p)
+          placed = true
+          break
+        }
+      }
+      if (!placed) lanes.push([p])
+    })
+    return lanes
+  }
+
+  const lanes = calculateLanes()
 
   function formatTime(mins: number) {
     const total = DAY_START + mins
@@ -136,25 +169,48 @@ export default function Schedule() {
     return `${h}:${m === 0 ? "00" : m}`
   }
 
-  const lanes = calculateLanes(patients)
-
   return (
     <div style={{ padding: 30, fontFamily: "sans-serif" }}>
       {/* XP bar */}
       <div style={{ marginBottom: 20, border: "1px solid #ccc", padding: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <div>XP: {totalXP}</div>
-          <div style={{ marginLeft: 10 }}>Level: {level}</div>
+          <div>Total XP: {totalXP}</div>
+          <div>Level: {level}</div>
         </div>
-        <div style={{ height: 20, background: "#ddd", marginTop: 8 }}>
-          <div
-            style={{
-              height: "100%",
-              width: `${xpIntoLevel}%`,
-              background: "#22c55e",
-              transition: "width 0.3s ease",
-            }}
-          />
+
+        <div
+          style={{
+            height: 20,
+            background: "#eee",
+            marginTop: 8,
+            display: "flex",
+          }}
+        >
+          {Object.entries(xpBreakdown).map(([key, value]) => {
+            const percent = totalXP === 0 ? 0 : (value / 100)
+            return (
+              <div
+                key={key}
+                style={{
+                  width: `${percent}%`,
+                  background:
+                    key === "eval"
+                      ? "#f43f5e"
+                      : key === "therAct"
+                      ? "#3b82f6"
+                      : key === "neuro"
+                      ? "#8b5cf6"
+                      : key === "therEx"
+                      ? "#22c55e"
+                      : key === "manual"
+                      ? "#f59e0b"
+                      : key === "self"
+                      ? "#06b6d4"
+                      : "#6b7280",
+                }}
+              />
+            )
+          })}
         </div>
       </div>
 
@@ -194,8 +250,8 @@ export default function Schedule() {
             lane.map(p => {
               const top = p.start * PIXELS_PER_MINUTE
               const height = p.duration * PIXELS_PER_MINUTE
-              const width = 100 / lanes.length - 2
-              const left = laneIndex * (100 / lanes.length)
+              const width = 100 / lanes.length
+              const left = laneIndex * width
 
               return (
                 <div
@@ -213,6 +269,7 @@ export default function Schedule() {
                     borderRadius: 6,
                   }}
                 >
+                  {/* Drag handle */}
                   <div
                     onMouseDown={() => setDragging(p.id)}
                     style={{
@@ -253,11 +310,8 @@ export default function Schedule() {
 
                   {expanded === p.id && (
                     <div style={{ marginTop: 6 }}>
-                      <button onClick={() => deletePatient(p.id)}>
-                        Delete
-                      </button>
+                      <button onClick={() => deletePatient(p.id)}>Delete</button>
 
-                      {/* Units */}
                       {[
                         ["eval", "Evaluation"],
                         ["therAct", "97530 Ther Act"],
@@ -271,7 +325,7 @@ export default function Schedule() {
                           <label>{label}</label>
                           <input
                             type="number"
-                            value={p.units[key as keyof typeof p.units]}
+                            value={(p.units as any)[key]}
                             onChange={e =>
                               setPatients(prev =>
                                 prev.map(pt =>
