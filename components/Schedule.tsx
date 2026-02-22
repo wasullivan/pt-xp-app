@@ -56,31 +56,21 @@ export default function Schedule() {
   const dayHeight = totalMinutes * PIXELS_PER_MINUTE
 
   // XP Calculation
-  const xpBreakdown = useMemo(() => {
-    const totals = {
-      eval: 0,
-      therAct: 0,
-      neuro: 0,
-      therEx: 0,
-      manual: 0,
-      self: 0,
-      modality: 0,
-    }
-
-    patients.forEach(p => {
-      totals.eval += calculateUnitXP(p.units.eval, UNIT_VALUES.eval)
-      totals.therAct += calculateUnitXP(p.units.therAct, UNIT_VALUES.therAct)
-      totals.neuro += calculateUnitXP(p.units.neuro, UNIT_VALUES.neuro)
-      totals.therEx += calculateUnitXP(p.units.therEx, UNIT_VALUES.therEx)
-      totals.manual += calculateUnitXP(p.units.manual, UNIT_VALUES.manual)
-      totals.self += calculateUnitXP(p.units.self, UNIT_VALUES.self)
-      totals.modality += calculateUnitXP(p.units.modality, UNIT_VALUES.modality)
-    })
-
-    return totals
+  const totalXP = useMemo(() => {
+    return patients.reduce((sum, p) => {
+      return (
+        sum +
+        calculateUnitXP(p.units.eval, UNIT_VALUES.eval) +
+        calculateUnitXP(p.units.therAct, UNIT_VALUES.therAct) +
+        calculateUnitXP(p.units.neuro, UNIT_VALUES.neuro) +
+        calculateUnitXP(p.units.therEx, UNIT_VALUES.therEx) +
+        calculateUnitXP(p.units.manual, UNIT_VALUES.manual) +
+        calculateUnitXP(p.units.self, UNIT_VALUES.self) +
+        calculateUnitXP(p.units.modality, UNIT_VALUES.modality)
+      )
+    }, 0)
   }, [patients])
 
-  const totalXP = Object.values(xpBreakdown).reduce((a, b) => a + b, 0)
   const level = Math.floor(totalXP / 100) + 1
   const xpIntoLevel = totalXP % 100
 
@@ -108,6 +98,7 @@ export default function Schedule() {
 
   function deletePatient(id: string) {
     setPatients(prev => prev.filter(p => p.id !== id))
+    if (expanded === id) setExpanded(null)
   }
 
   // Drag & Drop
@@ -174,43 +165,18 @@ export default function Schedule() {
       {/* XP bar */}
       <div style={{ marginBottom: 20, border: "1px solid #ccc", padding: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <div>Total XP: {totalXP}</div>
-          <div>Level: {level}</div>
+          <div>XP: {totalXP}</div>
+          <div style={{ marginLeft: 10 }}>Level: {level}</div>
         </div>
-
-        <div
-          style={{
-            height: 20,
-            background: "#eee",
-            marginTop: 8,
-            display: "flex",
-          }}
-        >
-          {Object.entries(xpBreakdown).map(([key, value]) => {
-            const percent = totalXP === 0 ? 0 : (value / 100)
-            return (
-              <div
-                key={key}
-                style={{
-                  width: `${percent}%`,
-                  background:
-                    key === "eval"
-                      ? "#f43f5e"
-                      : key === "therAct"
-                      ? "#3b82f6"
-                      : key === "neuro"
-                      ? "#8b5cf6"
-                      : key === "therEx"
-                      ? "#22c55e"
-                      : key === "manual"
-                      ? "#f59e0b"
-                      : key === "self"
-                      ? "#06b6d4"
-                      : "#6b7280",
-                }}
-              />
-            )
-          })}
+        <div style={{ height: 20, background: "#ddd", marginTop: 8 }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${xpIntoLevel}%`,
+              background: "#22c55e",
+              transition: "width 0.3s ease",
+            }}
+          />
         </div>
       </div>
 
@@ -262,56 +228,65 @@ export default function Schedule() {
                     left: `${left}%`,
                     width: `${width}%`,
                     minHeight: height,
-                    background: "#3b82f6",
-                    padding: 8,
-                    color: "white",
-                    boxSizing: "border-box",
-                    borderRadius: 6,
                   }}
                 >
-                  {/* Drag handle */}
+                  {/* Patient Header */}
                   <div
-                    onMouseDown={() => setDragging(p.id)}
                     style={{
-                      height: 8,
-                      background: "rgba(255,255,255,0.4)",
+                      background: "#3b82f6",
+                      padding: 8,
+                      color: "white",
+                      borderRadius: 6,
                       cursor: "grab",
-                      marginBottom: 6,
-                      borderRadius: 4,
                     }}
-                  />
-
-                  <input
-                    value={p.name}
-                    onChange={e =>
-                      setPatients(prev =>
-                        prev.map(pt =>
-                          pt.id === p.id
-                            ? { ...pt, name: e.target.value }
-                            : pt
-                        )
-                      )
-                    }
-                    style={{
-                      width: "100%",
-                      marginBottom: 6,
-                      borderRadius: 4,
-                      padding: 2,
-                    }}
-                  />
-
-                  <button
-                    onClick={() =>
-                      setExpanded(expanded === p.id ? null : p.id)
-                    }
+                    onMouseDown={() => setDragging(p.id)}
                   >
-                    {expanded === p.id ? "Close" : "Edit Units"}
-                  </button>
+                    <input
+                      value={p.name}
+                      onChange={e =>
+                        setPatients(prev =>
+                          prev.map(pt =>
+                            pt.id === p.id
+                              ? { ...pt, name: e.target.value }
+                              : pt
+                          )
+                        )
+                      }
+                      style={{
+                        width: "100%",
+                        marginBottom: 4,
+                        borderRadius: 4,
+                        padding: 2,
+                      }}
+                    />
+                    <button
+                      onClick={() =>
+                        setExpanded(expanded === p.id ? null : p.id)
+                      }
+                    >
+                      {expanded === p.id ? "Close" : "Edit Units"}
+                    </button>
+                  </div>
 
+                  {/* Expanded Unit Editor */}
                   {expanded === p.id && (
-                    <div style={{ marginTop: 6 }}>
-                      <button onClick={() => deletePatient(p.id)}>Delete</button>
-
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: height + 8, // float below the header
+                        left: 0,
+                        zIndex: 10,
+                        width: "100%",
+                        background: "#f3f4f6",
+                        color: "#111",
+                        borderRadius: 6,
+                        padding: 8,
+                        boxShadow: "0 4px 8px rgba(0,0,0,0.15)",
+                      }}
+                    >
+                      <button onClick={() => deletePatient(p.id)}>
+                        Delete
+                      </button>
                       {[
                         ["eval", "Evaluation"],
                         ["therAct", "97530 Ther Act"],
